@@ -1,0 +1,957 @@
+import React, { useState } from 'react';
+import { LayoutDashboard, BookOpen, BarChart3, Settings, User, Users, Shield, Briefcase, ClipboardList, LogOut, Bell, Menu } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
+
+// ============================================================================
+// --- FILE: /src/data/mockData.js ---
+// This simulates the data you'll fetch from your backend API via axios.
+// ============================================================================
+
+export const DUMMY_DATA = {
+    users: [
+        { id: 'u1', name: 'Bharath Kumar', email: 'bharath@example.com', role: 'student' },
+        { id: 'u2', name: 'Dr. Yashwanth', email: 'yash@example.com', role: 'instructor' },
+        { id: 'u3', name: 'Admin User', email: 'admin@example.com', role: 'admin' },
+        { id: 'u4', name: 'Jane Doe', email: 'jane@example.com', role: 'student' },
+    ],
+    courses: [
+        { 
+            id: 'c1', 
+            title: 'Web Development Bootcamp', 
+            instructorId: 'u2', 
+            instructorName: 'Dr. Yashwanth',
+            description: 'Full-stack web development with React and Node.js.',
+            thumbnail: 'https://placehold.co/600x400/3498db/ffffff?text=Web+Dev',
+            enrolledStudentIds: ['u1', 'u4'],
+            progress: 65, // Student-specific progress for u1
+        },
+        { 
+            id: 'c2', 
+            title: 'Data Science Fundamentals', 
+            instructorId: 'u2',
+            instructorName: 'Dr. Yashwanth',
+            description: 'Learn Python, Pandas, and Matplotlib.',
+            thumbnail: 'https://placehold.co/600x400/2ecc71/ffffff?text=Data+Science',
+            enrolledStudentIds: ['u1'],
+            progress: 30, // Student-specific progress for u1
+        },
+        { 
+            id: 'c3', 
+            title: 'Machine Learning Basics', 
+            instructorId: 'u2',
+            instructorName: 'Dr. Yashwanth',
+            description: 'Intro to supervised and unsupervised learning.',
+            thumbnail: 'https://placehold.co/600x400/f39c12/ffffff?text=ML+Basics',
+            enrolledStudentIds: ['u4'],
+            progress: 80, // Student-specific progress for u4
+        },
+    ],
+    assignments: [
+        { id: 'a1', courseId: 'c1', title: 'React Components Quiz', dueDate: 'Oct 30, 2025', status: 'Pending' },
+        { id: 'a2', courseId: 'c1', title: 'CSS Grid Layout Project', dueDate: 'Nov 05, 2025', status: 'Pending' },
+        { id: 'a3', courseId: 'c2', title: 'Data Cleaning with Pandas', dueDate: 'Oct 28, 2025', status: 'Submitted' },
+    ],
+    analytics: {
+        // For Student 'u1'
+        studyHours: [
+            { name: 'Mon', hours: 2 },
+            { name: 'Tue', hours: 3 },
+            { name: 'Wed', hours: 1.5 },
+            { name: 'Thu', hours: 4 },
+            { name: 'Fri', hours: 2.5 },
+            { name: 'Sat', hours: 5 },
+            { name: 'Sun', hours: 3 },
+        ],
+        gradeDistribution: [
+            { name: 'A', value: 4 },
+            { name: 'B', value: 3 },
+            { name: 'C', value: 1 },
+        ],
+        courseProgress: [
+            { name: 'Week 1', progress: 10 },
+            { name: 'Week 2', progress: 25 },
+            { name: 'Week 3', progress: 40 },
+            { name: 'Week 4', progress: 65 },
+        ],
+        // For Admin
+        adminStats: {
+            totalUsers: 150,
+            totalCourses: 25,
+            activeStudents: 120,
+            instructors: 10,
+        }
+    },
+    recentActivity: [
+        { id: 'r1', text: 'Completed "React Fundamentals" module', time: '2h ago' },
+        { id: 'r2', text: 'Submitted "Data Cleaning with Pandas"', time: '1d ago' },
+        { id: 'r3', text: 'Enrolled in "Machine Learning Basics"', time: '3d ago' },
+    ]
+};
+
+// --- CHART COLORS ---
+export const PIE_COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
+
+
+// ============================================================================
+// --- FILE: /src/components/common/CourseCard.jsx ---
+// A reusable card component for displaying courses.
+// ============================================================================
+// import React from 'react'; // (You'd add this in the new file)
+
+const CourseCard = ({ course }) => {
+    return (
+        <div className="bg-white rounded-xl shadow-lg overflow-hidden transition-all duration-300 hover:shadow-xl">
+            <img 
+                src={course.thumbnail} 
+                alt={course.title} 
+                className="w-full h-40 object-cover"
+                onError={(e) => { e.target.src = 'https://placehold.co/600x400/cccccc/ffffff?text=Image+Error'; }}
+            />
+            <div className="p-5">
+                <h3 className="text-xl font-bold text-gray-900 mb-2 truncate">{course.title}</h3>
+                <p className="text-sm text-gray-600 mb-3">By {course.instructorName}</p>
+                
+                {/* Progress Bar */}
+                {course.progress !== undefined && (
+                    <div className="mb-4">
+                        <div className="flex justify-between text-sm font-medium text-gray-600 mb-1">
+                            <span>Progress</span>
+                            <span>{course.progress}%</span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-2.5">
+                            <div className="bg-blue-600 h-2.5 rounded-full" style={{ width: `${course.progress}%` }}></div>
+                        </div>
+                    </div>
+                )}
+                
+                <button className="w-full bg-blue-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors">
+                    Continue Learning
+                </button>
+            </div>
+        </div>
+    );
+};
+
+// export default CourseCard; // (You'd uncomment this)
+
+
+// ============================================================================
+// --- FILE: /src/components/common/StatCard.jsx ---
+// A reusable card for displaying key stats.
+// ============================================================================
+// import React from 'react'; // (You'd add this in the new file)
+// import { Users } from 'lucide-react'; // (Example of icon import)
+
+const StatCard = ({ title, value, icon: Icon, colorClass }) => {
+    return (
+        <div className="bg-white p-6 rounded-xl shadow-lg flex items-center space-x-4">
+            <div className={`p-3 rounded-full ${colorClass}`}>
+                <Icon size={24} />
+            </div>
+            <div>
+                <p className="text-sm font-medium text-gray-500">{title}</p>
+                <p className="text-3xl font-bold text-gray-900">{value}</p>
+            </div>
+        </div>
+    );
+};
+
+// export default StatCard; // (You'd uncomment this)
+
+
+// ============================================================================
+// --- FILE: /src/pages/student/StudentDashboard.jsx ---
+// Student Dashboard: Welcome, assignments, activity, and course summary.
+// ============================================================================
+// import React from 'react';
+// import { DUMMY_DATA } from '../../data/mockData';
+// import { ClipboardList, Briefcase } from 'lucide-react';
+
+const StudentDashboard = ({ user }) => {
+    // TODO: Fetch this data from API
+    const { assignments, recentActivity, courses } = DUMMY_DATA;
+    const enrolledCourses = courses.filter(c => c.enrolledStudentIds.includes(user.id));
+    const upcomingAssignments = assignments.filter(a => a.status === 'Pending');
+
+    return (
+        <div className="space-y-8">
+            <h1 className="text-4xl font-bold text-gray-900">Welcome back, {user.name.split(' ')[0]}!</h1>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Main Content (Left) */}
+                <div className="lg:col-span-2 space-y-8">
+                    {/* My Courses */}
+                    <div>
+                        <h2 className="text-2xl font-semibold text-gray-800 mb-4">My Courses</h2>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {enrolledCourses.slice(0, 2).map(course => ( // Show first 2
+                                <CourseCard key={course.id} course={course} />
+                            ))}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Sidebar (Right) */}
+                <div className="space-y-8">
+                    {/* Upcoming Assignments */}
+                    <div className="bg-white p-6 rounded-xl shadow-lg">
+                        <h2 className="text-xl font-semibold mb-4">Upcoming Assignments</h2>
+                        <ul className="space-y-4">
+                            {upcomingAssignments.map(a => (
+                                <li key={a.id} className="flex items-center space-x-3">
+                                    <div className="p-2 bg-yellow-100 rounded-lg">
+                                        <ClipboardList size={20} className="text-yellow-600" />
+                                    </div>
+                                    <div>
+                                        <p className="font-medium text-gray-800">{a.title}</p>
+                                        <p className="text-sm text-gray-500">Due: {a.dueDate}</p>
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+
+                    {/* Recent Activity */}
+                    <div className="bg-white p-6 rounded-xl shadow-lg">
+                        <h2 className="text-xl font-semibold mb-4">Recent Activity</h2>
+                        <ul className="space-y-4">
+                            {recentActivity.map(r => (
+                                <li key={r.id} className="flex items-start space-x-3">
+                                    <div className="p-2 bg-blue-100 rounded-lg mt-1">
+                                        <Briefcase size={20} className="text-blue-600" />
+                                    </div>
+                                    <div>
+                                        <p className="font-medium text-gray-800">{r.text}</p>
+                                        <p className="text-sm text-gray-500">{r.time}</p>
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// export default StudentDashboard; // (You'd uncomment this)
+
+// ============================================================================
+// --- FILE: /src/pages/student/studentCourses.jsx ---
+// Student Courses Page: Full list of enrolled courses.
+// ============================================================================
+// import React from 'react';
+// import { DUMMY_DATA } from '../../data/mockData';
+// import CourseCard from '../../components/common/CourseCard';
+
+const StudentCourses = ({ user }) => {
+    // TODO: Fetch this data from API
+    const enrolledCourses = DUMMY_DATA.courses.filter(c => c.enrolledStudentIds.includes(user.id));
+    
+    return (
+        <div>
+            <h1 className="text-3xl font-bold text-gray-900 mb-6">My Courses</h1>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {enrolledCourses.map(course => (
+                    <CourseCard key={course.id} course={course} />
+                ))}
+            </div>
+        </div>
+    );
+};
+
+// export default StudentCourses; // (You'd uncomment this)
+
+// ============================================================================
+// --- FILE: /src/pages/student/StudentAnalytics.jsx ---
+// Student Analytics Page: Charts for progress and performance.
+// ============================================================================
+// import React from 'react';
+// import { DUMMY_DATA, PIE_COLORS } from '../../data/mockData';
+// import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
+
+const StudentAnalytics = () => {
+    // TODO: Fetch this data from API
+    const { studyHours, gradeDistribution, courseProgress } = DUMMY_DATA.analytics;
+
+    return (
+        <div>
+            <h1 className="text-3xl font-bold text-gray-900 mb-6">Learning Analytics</h1>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Weekly Study Hours */}
+                <div className="bg-white p-6 rounded-xl shadow-lg">
+                    <h2 className="text-xl font-semibold mb-4">Weekly Study Hours</h2>
+                    <ResponsiveContainer width="100%" height={300}>
+                        <BarChart data={studyHours}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="name" />
+                            <YAxis />
+                            <Tooltip />
+                            <Legend />
+                            <Bar dataKey="hours" fill="#3498db" />
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+                
+                {/* Grade Distribution */}
+                <div className="bg-white p-6 rounded-xl shadow-lg">
+                    <h2 className="text-xl font-semibold mb-4">Grade Distribution</h2>
+                    <ResponsiveContainer width="100%" height={300}>
+                        <PieChart>
+                            <Pie
+                                data={gradeDistribution}
+                                cx="50%"
+                                cy="50%"
+                                labelLine={false}
+                                outerRadius={120}
+                                fill="#8884d8"
+                                dataKey="value"
+                                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                            >
+                                {gradeDistribution.map((entry, index) => (
+                                    <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
+                                ))}
+                            </Pie>
+                            <Tooltip />
+                        </PieChart>
+                    </ResponsiveContainer>
+                </div>
+
+                {/* Course Progress Overview */}
+                <div className="bg-white p-6 rounded-xl shadow-lg lg:col-span-2">
+                    <h2 className="text-xl font-semibold mb-4">Course Progress Overview</h2>
+                    <ResponsiveContainer width="100%" height={300}>
+                        <LineChart data={courseProgress}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="name" />
+                            <YAxis label={{ value: 'Progress %', angle: -90, position: 'insideLeft' }} />
+                            <Tooltip />
+                            <Legend />
+                            <Line type="monotone" dataKey="progress" stroke="#2ecc71" strokeWidth={2} activeDot={{ r: 8 }} />
+                        </LineChart>
+                    </ResponsiveContainer>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// export default StudentAnalytics; // (You'd uncomment this)
+
+// ============================================================================
+// --- FILE: /src/pages/student/StudentAssignments.jsx ---
+// Student Assignments Page
+// ============================================================================
+// import React from 'react';
+// import { DUMMY_DATA } from '../../data/mockData';
+
+const StudentAssignments = () => {
+    // TODO: Fetch this data from API
+    const assignments = DUMMY_DATA.assignments;
+
+    return (
+        <div>
+            <h1 className="text-3xl font-bold text-gray-900 mb-6">Assignments</h1>
+            <div className="bg-white p-6 rounded-xl shadow-lg">
+                <ul className="space-y-4">
+                    {assignments.map(a => (
+                        <li key={a.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100">
+                            <div className="mb-2 sm:mb-0">
+                                <p className="font-medium text-gray-800">{a.title}</p>
+                                <p className="text-sm text-gray-500">Due: {a.dueDate}</p>
+                            </div>
+                            <span className={`text-sm font-medium py-1 px-3 rounded-full ${
+                                a.status === 'Pending' ? 'bg-yellow-100 text-yellow-700' :
+                                a.status === 'Submitted' ? 'bg-blue-100 text-blue-700' :
+                                'bg-green-100 text-green-700'
+                            }`}>
+                                {a.status}
+                            </span>
+                        </li>
+                    ))}
+                </ul>
+            </div>
+        </div>
+    );
+};
+
+// export default StudentAssignments; // (You'd uncomment this)
+
+// ============================================================================
+// --- FILE: /src/pages/student/ProfileSettings.jsx ---
+// Student Profile Settings
+// ============================================================================
+// import React from 'react';
+
+const ProfileSettings = ({ user }) => {
+    // TODO: Fetch this data
+    return (
+        <div>
+            <h1 className="text-3xl font-bold text-gray-900 mb-6">Profile Settings</h1>
+            <div className="bg-white p-8 rounded-xl shadow-lg max-w-2xl mx-auto">
+                <div className="flex items-center space-x-6 mb-8">
+                    <div className="w-24 h-24 rounded-full bg-blue-600 flex items-center justify-center text-white text-4xl font-bold">
+                        {user.name.split(' ').map(n => n[0]).join('')}
+                    </div>
+                    <div>
+                        <h2 className="text-2xl font-semibold">{user.name}</h2>
+                        <p className="text-gray-600">{user.email}</p>
+                        <button className="mt-2 text-sm bg-blue-100 text-blue-700 py-1 px-3 rounded-full font-medium hover:bg-blue-200">
+                            Change Avatar
+                        </button>
+                    </div>
+                </div>
+                
+                <form className="space-y-6">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                        <input type="text" defaultValue={user.name} className="w-full p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+                        <input type="email" defaultValue={user.email} className="w-full p-2 border border-gray-300 rounded-lg bg-gray-100 cursor-not-allowed" readOnly />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Change Password</label>
+                        <input type="password" placeholder="New Password" className="w-full p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
+                        <input type="password" placeholder="Confirm New Password" className="w-full p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" />
+                    </div>
+                    <div className="pt-4">
+                        <button type="submit" className="w-full sm:w-auto bg-blue-600 text-white py-2 px-6 rounded-lg font-semibold hover:bg-blue-700 transition-colors">
+                            Save Changes
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+};
+
+// export default ProfileSettings; // (You'd uncomment this)
+
+
+// ============================================================================
+// --- FILE: /src/pages/instructor/InstructorDashboard.jsx ---
+// Instructor Dashboard: Overview of courses, student activity.
+// ============================================================================
+// import React from 'react';
+// import { DUMMY_DATA } from '../../data/mockData';
+// import StatCard from '../../components/common/StatCard';
+// import { Briefcase, Users, ClipboardList } from 'lucide-react';
+
+const InstructorDashboard = ({ user }) => {
+    // TODO: Fetch this data
+    const { totalUsers, activeStudents } = DUMMY_DATA.analytics.adminStats; // Re-using admin stats for demo
+    const courses = DUMMY_DATA.courses.filter(c => c.instructorId === user.id);
+
+    return (
+        <div className="space-y-6">
+            <h1 className="text-3xl font-bold text-gray-900">Welcome, {user.name}!</h1>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <StatCard title="My Courses" value={courses.length} icon={Briefcase} colorClass="bg-blue-100 text-blue-600" />
+                <StatCard title="Total Students" value={totalUsers} icon={Users} colorClass="bg-green-100 text-green-600" />
+                <StatCard title="Active Students" value={activeStudents} icon={Users} colorClass="bg-yellow-100 text-yellow-600" />
+                <StatCard title="New Submissions" value="14" icon={ClipboardList} colorClass="bg-indigo-100 text-indigo-600" />
+            </div>
+
+            <div className="bg-white p-6 rounded-xl shadow-lg">
+                <h2 className="text-xl font-semibold mb-4">My Courses</h2>
+                <div className="space-y-4">
+                    {courses.map(course => (
+                        <div key={course.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                            <div className="flex items-center space-x-4">
+                                <img src={course.thumbnail} alt={course.title} className="w-16 h-16 rounded-lg object-cover" />
+                                <div>
+                                    <h3 className="font-semibold text-gray-800">{course.title}</h3>
+                                    <p className="text-sm text-gray-500">{course.enrolledStudentIds.length} Students</p>
+                                </div>
+                            </div>
+                            <div>
+                                <button className="text-sm bg-blue-600 text-white py-2 px-4 rounded-lg font-medium hover:bg-blue-700">Manage</button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// export default InstructorDashboard; // (You'd uncomment this)
+
+// ============================================================================
+// --- FILE: /src/pages/instructor/InstructorCourseManagement.jsx ---
+// Instructor Course Management Page
+// ============================================================================
+// import React from 'react';
+// import { DUMMY_DATA } from '../../data/mockData';
+
+const InstructorCourseManagement = ({ user }) => {
+    // TODO: Fetch this data
+    const courses = DUMMY_DATA.courses.filter(c => c.instructorId === user.id);
+
+    return (
+        <div>
+            <div className="flex justify-between items-center mb-6">
+                <h1 className="text-3xl font-bold text-gray-900">Manage Courses</h1>
+                <button className="bg-green-600 text-white py-2 px-4 rounded-lg font-semibold hover:bg-green-700">
+                    Create New Course
+                </button>
+            </div>
+            <div className="bg-white p-6 rounded-xl shadow-lg">
+                <table className="w-full table-auto">
+                    <thead className="text-left text-sm font-semibold text-gray-600 border-b-2 border-gray-200">
+                        <tr>
+                            <th className="p-3">Course Title</th>
+                            <th className="p-3">Students</th>
+                            <th className="p-3">Status</th>
+                            <th className="p-3">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                        {courses.map(course => (
+                            <tr key={course.id} className="hover:bg-gray-50">
+                                <td className="p-3 font-medium text-gray-800">{course.title}</td>
+                                <td className="p-3 text-gray-600">{course.enrolledStudentIds.length}</td>
+                                <td className="p-3"><span className="bg-green-100 text-green-700 py-1 px-3 rounded-full text-xs font-medium">Published</span></td>
+                                <td className="p-3 space-x-2">
+                                    <button className="text-blue-600 hover:underline text-sm font-medium">Edit</button>
+                                    <button className="text-red-600 hover:underline text-sm font-medium">Delete</button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+};
+
+// export default InstructorCourseManagement; // (You'd uncomment this)
+
+
+// ============================================================================
+// --- FILE: /src/pages/admin/AdminDashboard.jsx ---
+// Admin Dashboard: High-level system stats.
+// ============================================================================
+// import React from 'react';
+// import { DUMMY_DATA } from '../../data/mockData';
+// import StatCard from '../../components/common/StatCard';
+// import { Users, Briefcase } from 'lucide-react';
+
+const AdminDashboard = () => {
+    // TODO: Fetch this data
+    const { totalUsers, totalCourses, activeStudents, instructors } = DUMMY_DATA.analytics.adminStats;
+
+    return (
+        <div className="space-y-6">
+            <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <StatCard title="Total Users" value={totalUsers} icon={Users} colorClass="bg-blue-100 text-blue-600" />
+                <StatCard title="Total Courses" value={totalCourses} icon={Briefcase} colorClass="bg-green-100 text-green-600" />
+                <StatCard title="Active Students" value={activeStudents} icon={Users} colorClass="bg-yellow-100 text-yellow-600" />
+                <StatCard title="Instructors" value={instructors} icon={Users} colorClass="bg-indigo-100 text-indigo-600" />
+            </div>
+            {/* TODO: Add more charts here, e.g., new user signups, course creation trends */}
+        </div>
+    );
+};
+
+// export default AdminDashboard; // (You'd uncomment this)
+
+// ============================================================================
+// --- FILE: /src/pages/admin/AdminUserManagement.jsx ---
+// Admin User Management Page
+// ============================================================================
+// import React from 'react';
+// import { DUMMY_DATA } from '../../data/mockData';
+
+const AdminUserManagement = () => {
+    // TODO: Fetch this data
+    const users = DUMMY_DATA.users;
+
+    return (
+        <div>
+            <div className="flex justify-between items-center mb-6">
+                <h1 className="text-3xl font-bold text-gray-900">User Management</h1>
+                <button className="bg-green-600 text-white py-2 px-4 rounded-lg font-semibold hover:bg-green-700">
+                    Add New User
+                </button>
+            </div>
+            <div className="bg-white p-6 rounded-xl shadow-lg">
+                <table className="w-full table-auto">
+                    <thead className="text-left text-sm font-semibold text-gray-600 border-b-2 border-gray-200">
+                        <tr>
+                            <th className="p-3">Name</th>
+                            <th className="p-3">Email</th>
+                            <th className="p-3">Role</th>
+                            <th className="p-3">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                        {users.map(user => (
+                            <tr key={user.id} className="hover:bg-gray-50">
+                                <td className="p-3 font-medium text-gray-800">{user.name}</td>
+                                <td className="p-3 text-gray-600">{user.email}</td>
+                                <td className="p-3">
+                                    <span className={`capitalize text-sm font-medium py-1 px-3 rounded-full ${
+                                        user.role === 'student' ? 'bg-blue-100 text-blue-700' :
+                                        user.role === 'instructor' ? 'bg-green-100 text-green-700' :
+                                        'bg-red-100 text-red-700'
+                                    }`}>
+                                        {user.role}
+                                    </span>
+                                </td>
+                                <td className="p-3 space-x-2">
+                                    <button className="text-blue-600 hover:underline text-sm font-medium">Edit</button>
+                                    <button className="text-red-600 hover:underline text-sm font-medium">Delete</button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+};
+
+// export default AdminUserManagement; // (You't uncomment this)
+
+
+// ============================================================================
+// --- FILE: /src/components/layout/Sidebar.jsx ---
+// The main sidebar navigation.
+// ============================================================================
+// import React from 'react';
+// import { LayoutDashboard, BookOpen, BarChart3, Settings, Users, Shield, Briefcase, ClipboardList, LogOut } from 'lucide-react';
+
+const Sidebar = ({ user, currentPage, onPageChange, onLogout, isSidebarOpen }) => {
+    const getNavLinks = (role) => {
+        switch (role) {
+            case 'student':
+                return [
+                    { name: 'Dashboard', icon: LayoutDashboard, page: 'dashboard' },
+                    { name: 'My Courses', icon: BookOpen, page: 'courses' },
+                    { name: 'Assignments', icon: ClipboardList, page: 'assignments' },
+                    { name: 'Analytics', icon: BarChart3, page: 'analytics' },
+                    { name: 'Profile', icon: Settings, page: 'profile' },
+                ];
+            case 'instructor':
+                return [
+                    { name: 'Dashboard', icon: LayoutDashboard, page: 'dashboard' },
+                    { name: 'Manage Courses', icon: Briefcase, page: 'manage-courses' },
+                    // { name: 'Student Analytics', icon: BarChart3, page: 'analytics' },
+                ];
+            case 'admin':
+                return [
+                    { name: 'Dashboard', icon: LayoutDashboard, page: 'dashboard' },
+                    { name: 'User Management', icon: Users, page: 'user-management' },
+                    // { name: 'Course Management', icon: BookOpen, page: 'course-management' },
+                    // { name: 'System Config', icon: Settings, page: 'config' },
+                ];
+            default:
+                return [];
+        }
+    };
+
+    const navLinks = getNavLinks(user.role);
+
+    return (
+        <div className={`fixed inset-y-0 left-0 bg-white w-64 p-6 flex flex-col z-20 shadow-lg transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
+            {/* Logo */}
+            <div className="flex items-center space-x-2 pb-6 border-b border-gray-200">
+                <div className="p-2 bg-blue-600 rounded-lg">
+                    <Shield size={24} className="text-white" />
+                </div>
+                <span className="text-2xl font-bold text-gray-900">AI-LMS</span>
+            </div>
+            
+            {/* Navigation */}
+            <nav className="flex-grow mt-8 space-y-2">
+                {navLinks.map(link => (
+                    <button
+                        key={link.name}
+                        onClick={() => onPageChange(link.page)}
+                        className={`flex items-center w-full space-x-3 p-3 rounded-lg text-left font-medium transition-colors ${
+                            currentPage === link.page 
+                            ? 'bg-blue-600 text-white shadow-md' 
+                            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                        }`}
+                    >
+                        <link.icon size={20} />
+                        <span>{link.name}</span>
+                    </button>
+                ))}
+            </nav>
+            
+            {/* Logout */}
+            <div className="pt-4 border-t border-gray-200">
+                <button
+                    onClick={onLogout}
+                    className="flex items-center w-full space-x-3 p-3 rounded-lg text-left font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                >
+                    <LogOut size={20} />
+                    <span>Logout</span>
+                </button>
+            </div>
+        </div>
+    );
+};
+
+// export default Sidebar; // (You'd uncomment this)
+
+// ============================================================================
+// --- FILE: /src/components/layout/Header.jsx ---
+// The top header bar.
+// ============================================================================
+// import React from 'react';
+// import { Bell, Menu } from 'lucide-react';
+
+const Header = ({ user, onToggleSidebar }) => {
+    return (
+        <header className="sticky top-0 z-10 bg-white/70 backdrop-blur-md shadow-sm border-b border-gray-200">
+            <div className="max-w-full mx-auto px-4 sm:px-6 lg:px-8">
+                <div className="flex justify-between items-center h-16">
+                    {/* Hamburger Menu for Mobile */}
+                    <button
+                        onClick={onToggleSidebar}
+                        className="text-gray-600 hover:text-gray-900 lg:hidden"
+                    >
+                        <Menu size={24} />
+                    </button>
+
+                    {/* Spacer on desktop, search on mobile (optional) */}
+                    <div className="lg:hidden"></div>
+                    <div className="hidden lg:block"></div> {/* Spacer for desktop */}
+                    
+                    {/* Right-side icons and profile */}
+                    <div className="flex items-center space-x-4">
+                        <button className="text-gray-500 hover:text-gray-900 p-1 rounded-full hover:bg-gray-100">
+                            <Bell size={20} />
+                        </button>
+                        <div className="flex items-center space-x-2">
+                            <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-bold">
+                                {user.name.split(' ').map(n => n[0]).join('')}
+                            </div>
+                            <div className="hidden sm:block">
+                                <p className="text-sm font-medium text-gray-900">{user.name}</p>
+                                <p className="text-xs text-gray-500 capitalize">{user.role}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+    );
+};
+
+// export default Header; // (You'd uncomment this)
+
+
+// ============================================================================
+// --- FILE: /src/components/layout/AppLayout.jsx ---
+// The main layout container (Sidebar + Header + Content).
+// This file would also contain the MainContent component.
+// ============================================================================
+// import React, { useState } from 'react';
+// import Sidebar from './Sidebar';
+// import Header from './Header';
+//
+// --- Student Page Imports ---
+// import StudentDashboard from '../../pages/student/StudentDashboard';
+// import StudentCourses from '../../pages/student/studentCourses';
+// import StudentAnalytics from '../../pages/student/StudentAnalytics';
+// import StudentAssignments from '../../pages/student/StudentAssignments';
+// import ProfileSettings from '../../pages/student/ProfileSettings';
+//
+// --- Instructor Page Imports ---
+// import InstructorDashboard from '../../pages/instructor/InstructorDashboard';
+// import InstructorCourseManagement from '../../pages/instructor/InstructorCourseManagement';
+//
+// --- Admin Page Imports ---
+// import AdminDashboard from '../../pages/admin/AdminDashboard';
+// import AdminUserManagement from '../../pages/admin/AdminUserManagement';
+
+
+/**
+ * Main content area renderer based on current page and role.
+ * This is kept inside AppLayout as it's only used here.
+ */
+const MainContent = ({ user, currentPage }) => {
+    // Student Pages
+    if (user.role === 'student') {
+        switch (currentPage) {
+            case 'dashboard':
+                return <StudentDashboard user={user} />;
+            case 'courses':
+                return <StudentCourses user={user} />;
+            case 'analytics':
+                return <StudentAnalytics />;
+            case 'assignments':
+                return <StudentAssignments />;
+            case 'profile':
+                return <ProfileSettings user={user} />;
+            default:
+                return <StudentDashboard user={user} />;
+        }
+    }
+    
+    // Instructor Pages
+    if (user.role === 'instructor') {
+        switch (currentPage) {
+            case 'dashboard':
+                return <InstructorDashboard user={user} />;
+            case 'manage-courses':
+                return <InstructorCourseManagement user={user} />;
+            default:
+                return <InstructorDashboard user={user} />;
+        }
+    }
+    
+    // Admin Pages
+    if (user.role === 'admin') {
+        switch (currentPage) {
+            case 'dashboard':
+                return <AdminDashboard />;
+            case 'user-management':
+                return <AdminUserManagement />;
+            default:
+                return <AdminDashboard />;
+        }
+    }
+    
+    return <h1 className="text-red-500">Error: No component for this role.</h1>;
+};
+
+/**
+ * The main layout container component.
+ */
+const AppLayout = ({ user, onLogout }) => {
+    const [currentPage, setCurrentPage] = useState('dashboard');
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    
+    return (
+        <div className="min-h-screen bg-gray-50">
+            <Sidebar 
+                user={user} 
+                currentPage={currentPage}
+                onPageChange={(page) => {
+                    setCurrentPage(page);
+                    setIsSidebarOpen(false); // Close sidebar on mobile nav click
+                }}
+                onLogout={onLogout}
+                isSidebarOpen={isSidebarOpen}
+            />
+            {/* Mobile overlay */}
+            {isSidebarOpen && (
+                <div 
+                    className="fixed inset-0 z-10 bg-black/30 lg:hidden"
+                    onClick={() => setIsSidebarOpen(false)}
+                ></div>
+            )}
+            
+            <div className="lg:ml-64 flex flex-col flex-1">
+                <Header 
+                    user={user} 
+                    onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+                />
+                <main className="flex-1 p-6 lg:p-10">
+                    <MainContent user={user} currentPage={currentPage} />
+                </main>
+            </div>
+        </div>
+    );
+};
+
+// export default AppLayout; // (You'd uncomment this)
+
+// ============================================================================
+// --- FILE: /src/pages/LoginScreen.jsx ---
+// Mock Login Screen to switch users.
+// ============================================================================
+// import React from 'react';
+// import { DUMMY_DATA } from '../data/mockData';
+// import { Shield, User, Briefcase } from 'lucide-react';
+
+const LoginScreen = ({ onLogin }) => {
+    const student = DUMMY_DATA.users.find(u => u.role === 'student');
+    const instructor = DUMMY_DATA.users.find(u => u.role === 'instructor');
+    const admin = DUMMY_DATA.users.find(u => u.role === 'admin');
+    
+    return (
+        <div className="min-h-screen bg-gray-100 flex items-center justify-center p-8">
+            <div className="max-w-md w-full bg-white p-10 rounded-2xl shadow-xl space-y-6">
+                <div className="flex items-center justify-center space-x-3">
+                    <div className="p-3 bg-blue-600 rounded-xl">
+                        <Shield size={28} className="text-white" />
+                    </div>
+                    <span className="text-3xl font-bold text-gray-900">AI-LMS Portal</span>
+                </div>
+                <h2 className="text-center text-xl text-gray-600">Select a role to continue</h2>
+                <div className="space-y-4">
+                    <button
+                        onClick={() => onLogin(student)}
+                        className="w-full flex items-center space-x-3 p-4 bg-blue-600 text-white rounded-lg font-semibold text-lg hover:bg-blue-700 transition-all duration-200 shadow-md hover:shadow-lg"
+                    >
+                        <User size={24} />
+                        <span>Login as Student ({student.name})</span>
+                    </button>
+                    <button
+                        onClick={() => onLogin(instructor)}
+                        className="w-full flex items-center space-x-3 p-4 bg-green-600 text-white rounded-lg font-semibold text-lg hover:bg-green-700 transition-all duration-200 shadow-md hover:shadow-lg"
+                    >
+                        <Briefcase size={24} />
+                        <span>Login as Instructor ({instructor.name})</span>
+                    </button>
+                    <button
+                        onClick={() => onLogin(admin)}
+                        className="w-full flex items-center space-x-3 p-4 bg-gray-700 text-white rounded-lg font-semibold text-lg hover:bg-gray-800 transition-all duration-200 shadow-md hover:shadow-lg"
+                    >
+                        <Shield size={24} />
+                        <span>Login as Admin ({admin.name})</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// export default LoginScreen; // (You'd uncomment this)
+
+
+// ============================================================================
+// --- FILE: /src/App.jsx ---
+// The root component.
+// Manages authentication state (currentUser) and renders either
+// the LoginScreen or the main AppLayout.
+// ============================================================================
+// import React, { useState } from 'react';
+// import LoginScreen from './pages/LoginScreen';
+// import AppLayout from './components/layout/AppLayout';
+
+export default function App() {
+    const [currentUser, setCurrentUser] = useState(null);
+
+    const handleLogin = (user) => {
+        // In a real app, you'd get a JWT token from your backend here
+        console.log("Logging in as:", user);
+        setCurrentUser(user);
+    };
+
+    const handleLogout = () => {
+        // In a real app, you'd clear the token
+        console.log("Logging out");
+        setCurrentUser(null);
+    };
+
+    if (!currentUser) {
+        return <LoginScreen onLogin={handleLogin} />;
+    }
+
+    return <AppLayout user={currentUser} onLogout={handleLogout} />;
+}
+
