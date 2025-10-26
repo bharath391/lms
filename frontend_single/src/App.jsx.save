@@ -1,0 +1,2320 @@
+OOimport React, { useState, useEffect, useRef, createContext, useContext } from 'react';
+import { initializeApp } from 'firebase/app';
+import { 
+  getAuth, 
+  OBOOsignInAnonymously, 
+  signInWithCustomToken, 
+  onAuOthStateChanged,
+  setPersistence,
+  inMemoryPersistence
+} from 'firebase/auth';
+import { 
+  getFirestore, 
+  doc, 
+  getDoc, 
+  setDoc, 
+  updateDoc, 
+  deleteDoc, 
+  onSnapshot, 
+  collection, 
+  query, 
+  where, 
+  addDoc, 
+  getDocs,
+  Timestamp,
+  serverTimestamp,
+  setLogLevel
+} from 'firebase/firestore';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
+import { 
+  BookOpen, 
+  LayoutDashboard, 
+  Users, 
+  Settings, 
+  BarChart2, 
+  Plus, 
+  ChevronLeft, 
+  ChevronRight, 
+  Check, 
+  X, 
+  List, 
+  FileText, 
+  Video, 
+  Edit, 
+  Trash2, 
+  Save, 
+  Play, 
+  ArrowLeft,
+  Menu,
+  FilePlus,
+  TrendingUp,
+  Award,
+  Book,
+  Moon,
+  Sun,
+  LogOut,
+  ChevronDown,
+  Brain,
+  Sparkles,
+  MessageSquare
+} from 'lucide-react';
+
+// --- Firebase Configuration ---
+
+// These global variables are provided by the environment.
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+  apiKey: "YOUR_FALLBACK_API_KEY",
+  authDomain: "YOUR_FALLBACK_AUTH_DOMAIN",
+  projectId: "YOUR_FALLBACK_PROJECT_ID",
+  storageBucket: "YOUR_FALLBACK_STORAGE_BUCKET",
+  messagingSenderId: "YOUR_FALLBACK_MESSAGING_SENDER_ID",
+  appId: "YOUR_FALLBACK_APP_ID"
+};
+const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+// --- Firebase Initialization ---
+let app;
+let auth;
+let db;
+try {
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+  // Enable debug logging for Firestore
+  // setLogLevel('debug'); 
+} catch (error) {
+  console.error("Error initializing Firebase:", error);
+}
+
+// --- App Context ---
+const AppContext = createContext();
+
+const AppProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
+  const [userId, setUserId] = useState(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [darkMode, setDarkMode] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [navigation, setNavigation] = useState({
+    view: 'dashboard', // 'dashboard', 'courses', 'courseDetail', 'createCourse', 'editCourse', 'analytics', 'students', 'settings'
+    id: null, // e.g., courseId
+  });
+
+  useEffect(() => {
+    if (!auth) {
+      console.error("Firebase Auth is not initialized.");
+      setError("Application failed to initialize.");
+      setLoading(false);
+      setIsAuthReady(true); // Stop auth loading even on failure
+      return;
+    }
+
+    const initializeAuth = async () => {
+      try {
+        // Use in-memory persistence to avoid session conflicts in shared environments
+        await setPersistence(auth, inMemoryPersistence);
+        
+        const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+          if (firebaseUser) {
+            setUser(firebaseUser);
+            setUserId(firebaseUser.uid);
+          } else {
+            setUser(null);
+            setUserId(null);
+          }
+          setIsAuthReady(true);
+          setLoading(false);
+        });
+
+        if (initialAuthToken) {
+          // console.log("Signing in with custom token...");
+          await signInWithCustomToken(auth, initialAuthToken);
+        } else {
+          // console.log("Signing in anonymously...");
+          await signInAnonymously(auth);
+        }
+        
+        return () => unsubscribe();
+
+      } catch (err) {
+        console.error("Auth initialization error:", err);
+        setError("Failed to authenticate.");
+        setLoading(false);
+        setIsAuthReady(true);
+      }
+    };
+
+    initializeAuth();
+  }, []);
+
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [darkMode]);
+
+  const toggleDarkMode = () => {
+    setDarkMode(!darkMode);
+  };
+
+  const value = {
+    user,
+    userId,
+    isAuthReady,
+    loading,
+    error,
+    darkMode,
+    toggleDarkMode,
+    appId,
+    db,
+    auth,
+    navigation,
+    setNavigation
+  };
+
+  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+};
+
+const useAppContext = () => useContext(AppContext);
+
+// --- Reusable Components ---
+
+const LoadingSpinner = ({ size = 'lg' }) => {
+  const sizeClasses = {
+    sm: 'w-6 h-6',
+    md: 'w-10 h-10',
+    lg: 'w-16 h-16',
+  };
+  return (
+    <div className={`animate-spin rounded-full border-4 border-t-blue-600 border-gray-200 dark:border-gray-700 ${sizeClasses[size]}`}></div>
+  );
+};
+
+const FullPageLoader = ({ message = "Loading..." }) => (
+  <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200">
+    <LoadingSpinner size="lg" />
+    <p className="mt-4 text-lg font-medium">{message}</p>
+  </div>
+);
+
+const ErrorDisplay = ({ message }) => (
+  <div className="flex flex-col items-center justify-center min-h-screen bg-red-50 dark:bg-gray-900 p-6">
+    <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-xl max-w-md w-full text-center border border-red-200 dark:border-red-700">
+      <X className="w-16 h-16 text-red-500 mx-auto" />
+      <h2 className="mt-4 text-2xl font-bold text-red-700 dark:text-red-400">An Error Occurred</h2>
+      <p className="mt-2 text-gray-600 dark:text-gray-300">{message || "Something went wrong. Please refresh the page."}</p>
+    </div>
+  </div>
+);
+
+const StatCard = ({ title, value, icon, change, changeType }) => (
+  <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg transition-all duration-300 hover:shadow-xl border border-gray-200 dark:border-gray-700">
+    <div className="flex items-center justify-between">
+      <span className="text-sm font-medium text-gray-500 dark:text-gray-400 uppercase">{title}</span>
+      <div className="p-2 bg-blue-100 dark:bg-blue-900/50 rounded-lg text-blue-600 dark:text-blue-400">
+        {icon}
+      </div>
+    </div>
+    <p className="mt-2 text-3xl font-bold text-gray-900 dark:text-white">{value}</p>
+    {change && (
+      <div className="flex items-center mt-2 text-sm">
+        <span className={`flex items-center font-semibold ${changeType === 'positive' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+          <TrendingUp className={`w-4 h-4 mr-1 ${changeType === 'positive' ? '' : 'rotate-180'}`} />
+          {change}
+        </span>
+        <span className="ml-2 text-gray-500 dark:text-gray-400">from last month</span>
+      </div>
+    )}
+  </div>
+);
+
+const Modal = ({ isOpen, onClose, title, children }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-60 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div 
+        className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-lg m-4 p-6 border border-gray-200 dark:border-gray-700"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between pb-4 border-b border-gray-200 dark:border-gray-700">
+          <h3 className="text-xl font-semibold text-gray-900 dark:text-white">{title}</h3>
+          <button 
+            onClick={onClose} 
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+          >
+            <X className="w-6 h-6" />
+          </button>
+        </div>
+        <div className="mt-4">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const Button = ({ children, onClick, variant = 'primary', className = '', icon: Icon, ...props }) => {
+  const baseStyle = 'inline-flex items-center justify-center font-semibold py-2 px-4 rounded-lg shadow-sm transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 dark:focus:ring-offset-gray-900';
+  
+  const variants = {
+    primary: 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500',
+    secondary: 'bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600 focus:ring-gray-400',
+    danger: 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500',
+    ghost: 'bg-transparent text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 focus:ring-blue-500',
+  };
+
+  return (
+    <button
+      onClick={onClick}
+      className={`${baseStyle} ${variants[variant]} ${className}`}
+      {...props}
+    >
+      {Icon && <Icon className="w-4 h-4 mr-2" />}
+      {children}
+    </button>
+  );
+};
+
+const Input = ({ label, id, ...props }) => (
+  <div className="w-full">
+    <label htmlFor={id} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+      {label}
+    </label>
+    <input
+      id={id}
+      className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white dark:focus:ring-blue-600"
+      {...props}
+    />
+  </div>
+);
+
+const Textarea = ({ label, id, ...props }) => (
+  <div className="w-full">
+    <label htmlFor={id} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+      {label}
+    </label>
+    <textarea
+      id={id}
+      rows="4"
+      className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white dark:focus:ring-blue-600"
+      {...props}
+    />
+  </div>
+);
+
+// --- Gemini API Service ---
+
+const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=";
+const GEMINI_API_KEY = ""; // Provided by environment
+
+// Helper for exponential backoff
+const fetchWithBackoff = async (url, options, retries = 3, delay = 1000) => {
+  try {
+    const response = await fetch(url, options);
+    if (!response.ok) {
+      if (response.status === 429 && retries > 0) {
+        // console.warn(`Throttled. Retrying in ${delay}ms... (${retries} retries left)`);
+        await new Promise(res => setTimeout(res, delay));
+        return fetchWithBackoff(url, options, retries - 1, delay * 2);
+      }
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return response.json();
+  } catch (error) {
+    console.error("Fetch error:", error);
+    throw error;
+  }
+};
+
+const generateWithGemini = async (prompt, systemInstruction = null) => {
+  const payload = {
+    contents: [{ parts: [{ text: prompt }] }],
+    systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined,
+  };
+
+  const options = {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  };
+
+  try {
+    const result = await fetchWithBackoff(GEMINI_API_URL + GEMINI_API_KEY, options);
+    const candidate = result.candidates?.[0];
+    if (candidate && candidate.content?.parts?.[0]?.text) {
+      return candidate.content.parts[0].text;
+    } else {
+      console.error("Invalid response structure from Gemini:", result);
+      throw new Error("Failed to parse AI response.");
+    }
+  } catch (error) {
+    console.error("Error calling Gemini API:", error);
+    throw new Error("An error occurred while communicating with the AI.");
+  }
+};
+
+const generateJsonWithGemini = async (prompt, schema, systemInstruction = null) => {
+  const payload = {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: {
+      responseMimeType: "application/json",
+      responseSchema: schema,
+    },
+    systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined,
+  };
+
+  const options = {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  };
+
+  try {
+    const result = await fetchWithBackoff(GEMINI_API_URL + GEMINI_API_KEY, options);
+    const candidate = result.candidates?.[0];
+    if (candidate && candidate.content?.parts?.[0]?.text) {
+      const jsonText = candidate.content.parts[0].text;
+      return JSON.parse(jsonText);
+    } else {
+      console.error("Invalid JSON response structure from Gemini:", result);
+      throw new Error("Failed to parse AI JSON response.");
+    }
+  } catch (error) {
+    console.error("Error calling Gemini API for JSON:", error);
+    throw new Error("An error occurred while communicating with the AI.");
+  }
+};
+
+
+// --- Firestore Collections ---
+
+const getPrivateCollectionPath = (userId, collectionName) => {
+  if (!userId) {
+    console.error("Attempted to get collection path without userId");
+    return null;
+  }
+  return `/artifacts/${appId}/users/${userId}/${collectionName}`;
+};
+
+// --- App Layout ---
+
+const AppLayout = ({ children }) => {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  
+  return (
+    <div className="flex h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-white">
+      <Sidebar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <Header setSidebarOpen={setSidebarOpen} />
+        <main className="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 dark:bg-gray-900 p-6 md:p-8">
+          {children}
+        </main>
+      </div>
+    </div>
+  );
+};
+
+const Header = ({ setSidebarOpen }) => {
+  const { toggleDarkMode, darkMode, auth } = useAppContext();
+  
+  const handleLogout = () => {
+    if (auth) {
+      auth.signOut().catch(error => console.error("Error signing out:", error));
+    }
+  };
+
+  return (
+    <header className="flex justify-between items-center px-6 py-4 bg-white dark:bg-gray-800 shadow-md border-b border-gray-200 dark:border-gray-700">
+      <div className="flex items-center">
+        <button 
+          onClick={() => setSidebarOpen(true)} 
+          className="text-gray-500 dark:text-gray-300 focus:outline-none lg:hidden"
+        >
+          <Menu className="w-6 h-6" />
+        </button>
+        <h1 className="text-xl font-semibold ml-2 hidden sm:block">Course Creator</h1>
+      </div>
+      <div className="flex items-center space-x-4">
+        <button
+          onClick={toggleDarkMode}
+          className="p-2 rounded-full text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+        >
+          {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+        </button>
+        
+        <div className="relative">
+          <button className="flex items-center space-x-2 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700">
+             <img 
+               className="w-8 h-8 rounded-full" 
+               src={`https://api.dicebear.com/8.x/identicon/svg?seed=${auth?.currentUser?.uid || 'default'}`} 
+               alt="User Avatar" 
+             />
+             <span className="hidden md:block text-sm font-medium">{auth?.currentUser?.isAnonymous ? "Guest User" : "Admin"}</span>
+             <ChevronDown className="w-4 h-4 hidden md:block" />
+          </button>
+          {/* Dropdown Menu (optional) */}
+          {/* <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-xl py-1 hidden">
+            <a href="#" className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">Profile</a>
+            <button onClick={handleLogout} className="w-full text-left block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+              Sign Out
+            </button>
+          </div> */}
+        </div>
+      </div>
+    </header>
+  );
+};
+
+const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
+  const { navigation, setNavigation, userId } = useAppContext();
+
+  const handleNavClick = (view) => {
+    setNavigation({ view, id: null });
+    setSidebarOpen(false);
+  };
+
+  const navItems = [
+    { name: 'Dashboard', icon: LayoutDashboard, view: 'dashboard' },
+    { name: 'Courses', icon: BookOpen, view: 'courses' },
+    { name: 'Analytics', icon: BarChart2, view: 'analytics' },
+    { name: 'Students', icon: Users, view: 'students' },
+    { name: 'Settings', icon: Settings, view: 'settings' },
+  ];
+
+  return (
+    <>
+      {/* Mobile Sidebar Overlay */}
+      <div 
+        className={`fixed inset-0 z-20 bg-black bg-opacity-50 transition-opacity lg:hidden ${sidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+        onClick={() => setSidebarOpen(false)}
+      ></div>
+
+      {/* Sidebar */}
+      <div 
+        className={`fixed z-30 inset-y-0 left-0 w-64 transform ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} 
+                    lg:relative lg:translate-x-0 transition-transform duration-300 ease-in-out 
+                    bg-white dark:bg-gray-800 shadow-xl border-r border-gray-200 dark:border-gray-700
+                    flex flex-col`}
+      >
+        <div className="flex items-center justify-center px-6 py-5 border-b border-gray-200 dark:border-gray-700">
+          <Brain className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+          <span className="ml-3 text-2xl font-bold text-gray-800 dark:text-white">
+            CourseAI
+          </span>
+        </div>
+        <nav className="flex-1 px-4 py-6 space-y-2">
+          {navItems.map((item) => (
+            <button
+              key={item.name}
+              onClick={() => handleNavClick(item.view)}
+              className={`flex items-center w-full px-4 py-3 rounded-lg transition-colors duration-200
+                ${navigation.view === item.view 
+                  ? 'bg-blue-600 text-white shadow-lg' 
+                  : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }
+              `}
+            >
+              <item.icon className="w-5 h-5" />
+              <span className="ml-3 font-medium">{item.name}</span>
+            </button>
+          ))}
+        </nav>
+        
+        <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+          {/* Footer or User Info */}
+          <div className="p-4 bg-blue-50 dark:bg-gray-900 rounded-lg text-center">
+            <p className="text-sm text-blue-800 dark:text-blue-200">
+              Logged in as:
+            </p>
+            <p className="text-xs text-gray-600 dark:text-gray-400 truncate" title={userId}>
+              {userId ? `...${userId.slice(-12)}` : 'Loading...'}
+            </p>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+};
+
+// --- Main Application Pages ---
+
+// --- Dashboard ---
+const Dashboard = () => {
+  const { setNavigation, darkMode } = useAppContext();
+  const [stats, setStats] = useState({
+    totalCourses: 0,
+    totalStudents: 0,
+    totalRevenue: 0,
+    avgCompletion: 0,
+  });
+  const [recentActivity, setRecentActivity] = useState([]);
+  const [courseProgress, setCourseProgress] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // Mock data for charts
+  const revenueData = [
+    { name: 'Jan', revenue: 4000 },
+    { name: 'Feb', revenue: 3000 },
+    { name: 'Mar', revenue: 5000 },
+    { name: 'Apr', revenue: 4500 },
+    { name: 'May', revenue: 6000 },
+    { name: 'Jun', revenue: 5800 },
+  ];
+
+  const studentData = [
+    { name: 'New', value: 400 },
+    { name: 'Returning', value: 300 },
+  ];
+  const COLORS = ['#0088FE', '#00C49F'];
+
+
+  useEffect(() => {
+    // In a real app, you'd fetch this data from Firestore
+    setLoading(true);
+    setTimeout(() => {
+      setStats({
+        totalCourses: 12,
+        totalStudents: 1340,
+        totalRevenue: 25400,
+        avgCompletion: 68,
+      });
+      setRecentActivity([
+        { id: 1, text: 'John Doe enrolled in "Intro to React"', time: '2 hours ago' },
+        { id: 2, text: 'New course "Advanced Python" published', time: '1 day ago' },
+        { id: 3, text: 'Jane Smith completed "Data Science 101"', time: '1 day ago' },
+      ]);
+      setCourseProgress([
+        { name: 'Intro to React', progress: 80 },
+        { name: 'Data Science 101', progress: 60 },
+        { name: 'Advanced Python', progress: 30 },
+      ]);
+      setLoading(false);
+    }, 1000);
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-full">
+        <LoadingSpinner />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-8">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
+        <Button 
+          onClick={() => setNavigation({ view: 'createCourse', id: null })} 
+          variant="primary" 
+          icon={Plus}
+          className="mt-4 sm:mt-0"
+        >
+          Create New Course
+        </Button>
+      </div>
+
+      {/* Stat Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <StatCard 
+          title="Total Courses" 
+          value={stats.totalCourses} 
+          icon={<BookOpen className="w-6 h-6" />}
+          change="+2"
+          changeType="positive"
+        />
+        <StatCard 
+          title="Total Students" 
+          value={stats.totalStudents.toLocaleString()} 
+          icon={<Users className="w-6 h-6" />}
+          change="+120"
+          changeType="positive"
+        />
+        <StatCard 
+          title="Total Revenue" 
+          value={`$${stats.totalRevenue.toLocaleString()}`}
+          icon={<BarChart2 className="w-6 h-6" />}
+          change="-$500"
+          changeType="negative"
+        />
+        <StatCard 
+          title="Avg. Completion" 
+          value={`${stats.avgCompletion}%`}
+          icon={<Award className="w-6 h-6" />}
+          change="+3.5%"
+          changeType="positive"
+        />
+      </div>
+
+      {/* Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-semibold mb-4">Revenue Overview</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={revenueData}>
+              <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
+              <XAxis dataKey="name" />
+              <YAxis />
+              <Tooltip 
+                contentStyle={{ 
+                  backgroundColor: darkMode ? '#374151' : '#ffffff', 
+                  borderColor: darkMode ? '#4b5563' : '#e5e7eb' 
+                }} 
+              />
+              <Legend />
+              <Line type="monotone" dataKey="revenue" stroke="#3b82f6" strokeWidth={2} activeDot={{ r: 8 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-semibold mb-4">Student Distribution</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <PieChart>
+              <Pie
+                data={studentData}
+                cx="50%"
+                cy="50%"
+                labelLine={false}
+                outerRadius={100}
+                fill="#8884d8"
+                dataKey="value"
+                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+              >
+                {studentData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip 
+                contentStyle={{ 
+                  backgroundColor: darkMode ? '#374151' : '#ffffff', 
+                  borderColor: darkMode ? '#4b5563' : '#e5e7eb' 
+                }} 
+              />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Recent Activity & Course Progress */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-semibold mb-4">Recent Activity</h3>
+          <ul className="space-y-4">
+            {recentActivity.map(activity => (
+              <li key={activity.id} className="flex items-center space-x-3">
+                <div className="p-2 bg-gray-100 dark:bg-gray-700 rounded-full">
+                  <MessageSquare className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium">{activity.text}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{activity.time}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-semibold mb-4">Course Progress</h3>
+          <ul className="space-y-4">
+            {courseProgress.map(course => (
+              <li key={course.name}>
+                <div className="flex justify-between text-sm font-medium mb-1">
+                  <span>{course.name}</span>
+                  <span className="text-blue-600 dark:text-blue-400">{course.progress}%</span>
+                </div>
+                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+                  <div 
+                    className="bg-blue-600 h-2.5 rounded-full" 
+                    style={{ width: `${course.progress}%` }}
+                  ></div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- Courses List ---
+const CoursesList = () => {
+  const { userId, db, setNavigation } = useAppContext();
+  const [courses, setCourses] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!userId || !db) return;
+
+    const collectionPath = getPrivateCollectionPath(userId, 'courses');
+    if (!collectionPath) {
+      setError("User not authenticated.");
+      setLoading(false);
+      return;
+    }
+
+    const q = query(collection(db, collectionPath));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const coursesData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setCourses(coursesData);
+      setLoading(false);
+    }, (err) => {
+      console.error("Error fetching courses:", err);
+      setError("Failed to fetch courses.");
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [userId, db]);
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-full">
+        <LoadingSpinner />
+      </div>
+    );
+  }
+
+  if (error) {
+    return <ErrorDisplay message={error} />;
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
+        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">My Courses</h1>
+        <Button 
+          onClick={() => setNavigation({ view: 'createCourse', id: null })} 
+          variant="primary" 
+          icon={Plus}
+          className="mt-4 sm:mt-0"
+        >
+          Create New Course
+        </Button>
+      </div>
+
+      {courses.length === 0 ? (
+        <div className="text-center py-20 bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700">
+          <Book className="w-20 h-20 text-gray-400 dark:text-gray-500 mx-auto" />
+          <h3 className="mt-4 text-xl font-semibold">No Courses Yet</h3>
+          <p className="mt-2 text-gray-500 dark:text-gray-400">Get started by creating your first course.</p>
+          <Button 
+            onClick={() => setNavigation({ view: 'createCourse', id: null })} 
+            variant="primary" 
+            icon={Plus}
+            className="mt-6"
+          >
+            Create Course
+          </Button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {courses.map(course => (
+            <CourseCard key={course.id} course={course} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const CourseCard = ({ course }) => {
+  const { setNavigation } = useAppContext();
+  
+  const handleViewCourse = () => {
+    setNavigation({ view: 'courseDetail', id: course.id });
+  };
+  
+  const handleEditCourse = (e) => {
+    e.stopPropagation();
+    setNavigation({ view: 'editCourse', id: course.id });
+  };
+
+  const placeholderImg = `https://placehold.co/600x400/3b82f6/ffffff?text=${encodeURIComponent(course.title)}&font=inter`;
+  const moduleCount = course.modules?.length || 0;
+  const lessonCount = course.modules?.reduce((acc, mod) => acc + (mod.lessons?.length || 0), 0) || 0;
+
+  return (
+    <div 
+      onClick={handleViewCourse}
+      className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700 cursor-pointer transition-all duration-300 hover:shadow-xl hover:scale-[1.02]"
+    >
+      <img 
+        className="w-full h-48 object-cover" 
+        src={course.imageUrl || placeholderImg} 
+        alt={course.title} 
+        onError={(e) => e.currentTarget.src = placeholderImg}
+      />
+      <div className="p-6">
+        <h3 className="text-xl font-bold text-gray-900 dark:text-white truncate" title={course.title}>
+          {course.title}
+        </h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+          By {course.instructor || 'Admin'}
+        </p>
+        <p className="text-gray-600 dark:text-gray-300 mt-3 h-12 overflow-hidden text-ellipsis">
+          {course.description || 'No description available.'}
+        </p>
+        <div className="flex justify-between items-center mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+          <div className="flex space-x-4">
+            <span className="flex items-center text-sm text-gray-500 dark:text-gray-400">
+              <List className="w-4 h-4 mr-1.5" />
+              {moduleCount} Modules
+            </span>
+            <span className="flex items-center text-sm text-gray-500 dark:text-gray-400">
+              <FileText className="w-4 h-4 mr-1.5" />
+              {lessonCount} Lessons
+            </span>
+          </div>
+          <Button 
+            onClick={handleEditCourse} 
+            variant="ghost" 
+            className="px-2 py-1 !shadow-none"
+            title="Edit Course"
+          >
+            <Edit className="w-4 h-4" />
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
+// --- Course Detail ---
+const CourseDetail = () => {
+  const { userId, db, navigation, setNavigation } = useAppContext();
+  const [course, setCourse] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [activeModule, setActiveModule] = useState(null);
+  const [activeLesson, setActiveLesson] = useState(null);
+
+  useEffect(() => {
+    if (!userId || !db || !navigation.id) {
+      setError("Invalid request.");
+      setLoading(false);
+      return;
+    }
+
+    const docPath = `/artifacts/${appId}/users/${userId}/courses/${navigation.id}`;
+    const unsubscribe = onSnapshot(doc(db, docPath), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setCourse(data);
+        // Set initial active module and lesson
+        if (data.modules && data.modules.length > 0) {
+          const firstModule = data.modules[0];
+          setActiveModule(firstModule);
+          if (firstModule.lessons && firstModule.lessons.length > 0) {
+            setActiveLesson(firstModule.lessons[0]);
+          }
+        }
+      } else {
+        setError("Course not found.");
+      }
+      setLoading(false);
+    }, (err) => {
+      console.error("Error fetching course details:", err);
+      setError("Failed to fetch course details.");
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [userId, db, navigation.id]);
+
+  const handleLessonClick = (module, lesson) => {
+    setActiveModule(module);
+    setActiveLesson(lesson);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-full">
+        <LoadingSpinner />
+      </div>
+    );
+  }
+
+  if (error) {
+    return <ErrorDisplay message={error} />;
+  }
+
+  if (!course) {
+    return <ErrorDisplay message="Course data is unavailable." />;
+  }
+
+  return (
+    <div className="flex flex-col lg:flex-row gap-6 lg:max-h-[calc(100vh-150px)]">
+      {/* Main Content */}
+      <div className="lg:flex-[3] bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-y-auto p-6 md:p-8">
+        <div className="flex items-center mb-6">
+          <Button 
+            onClick={() => setNavigation({ view: 'courses', id: null })}
+            variant="ghost"
+            className="!px-2 mr-2"
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </Button>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{course.title}</h1>
+        </div>
+
+        {activeLesson ? (
+          <LessonContent lesson={activeLesson} />
+        ) : (
+          <div className="text-center py-20">
+            <BookOpen className="w-20 h-20 text-gray-400 dark:text-gray-500 mx-auto" />
+            <h3 className="mt-4 text-xl font-semibold">Welcome to your course!</h3>
+            <p className="mt-2 text-gray-500 dark:text-gray-400">Select a lesson from the sidebar to get started.</p>
+          </div>
+        )}
+
+        {/* Navigation */}
+        <div className="flex justify-between items-center mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+          <Button variant="secondary" icon={ChevronLeft}>Previous</Button>
+          <Button variant="primary" icon={Check}>Mark as Complete</Button>
+          <Button variant="secondary">Next <ChevronRight className="w-4 h-4 ml-2" /></Button>
+        </div>
+      </div>
+
+      {/* Sidebar - Course Outline */}
+      <div className="lg:flex-[1] bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 p-6 overflow-y-auto">
+        <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">Course Outline</h2>
+        <div className="space-y-4">
+          {course.modules && course.modules.map((module, moduleIndex) => (
+            <div key={moduleIndex}>
+              <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2">
+                {module.title}
+              </h3>
+              <ul className="space-y-1">
+                {module.lessons && module.lessons.map((lesson, lessonIndex) => (
+                  <li key={lessonIndex}>
+                    <button 
+                      onClick={() => handleLessonClick(module, lesson)}
+                      className={`w-full text-left flex items-center p-3 rounded-lg transition-colors
+                        ${activeLesson === lesson 
+                          ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300' 
+                          : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                        }
+                      `}
+                    >
+                      {getLessonIcon(lesson.type, "w-4 h-4 mr-3")}
+                      <span className="text-sm font-medium">{lesson.title}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const getLessonIcon = (type, className = "w-5 h-5") => {
+  switch (type) {
+    case 'video':
+      return <Video className={className} />;
+    case 'quiz':
+      return <Check className={className} />;
+    case 'text':
+    default:
+      return <FileText className={className} />;
+  }
+};
+
+const LessonContent = ({ lesson }) => {
+  switch (lesson.type) {
+    case 'video':
+      return (
+        <div>
+          <h2 className="text-2xl font-semibold mb-4">{lesson.title}</h2>
+          <div className="aspect-video bg-black rounded-lg overflow-hidden shadow-lg">
+            <iframe 
+              className="w-full h-full"
+              src={`https://www.youtube.com/embed/${lesson.videoUrl || 'dQw4w9WgXcQ'}`} // Default to a placeholder
+              title={lesson.title}
+              frameBorder="0" 
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+              allowFullScreen
+            ></iframe>
+          </div>
+          <div 
+            className="prose dark:prose-invert max-w-none mt-6"
+            dangerouslySetInnerHTML={{ __html: lesson.content || '<p>No description available.</p>' }} 
+          />
+        </div>
+      );
+    case 'quiz':
+      return (
+        <div>
+          <h2 className="text-2xl font-semibold mb-4">{lesson.title}</h2>
+          <div className="prose dark:prose-invert max-w-none mb-6"
+            dangerouslySetInnerHTML={{ __html: lesson.content || '<p>Test your knowledge!</p>' }} 
+          />
+          <div className="space-y-4">
+            {lesson.questions && lesson.questions.map((q, index) => (
+              <div key={index} className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                <p className="font-semibold mb-2">{index + 1}. {q.question}</p>
+                <div className="space-y-2">
+                  {q.options.map((opt, i) => (
+                    <label key={i} className="flex items-center p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-600">
+                      <input 
+                        type={q.type === 'multiple-choice' ? 'radio' : 'checkbox'} 
+                        name={`question-${index}`} 
+                        className="mr-2"
+                      />
+                      <span>{opt}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+          <Button variant="primary" className="mt-6">Submit Quiz</Button>
+        </div>
+      );
+    case 'text':
+    default:
+      return (
+        <div>
+          <h2 className="text-2xl font-semibold mb-4">{lesson.title}</h2>
+          <div 
+            className="prose dark:prose-invert max-w-none"
+            dangerouslySetInnerHTML={{ __html: lesson.content || '<p>No content available.</p>' }} 
+          />
+        </div>
+      );
+  }
+};
+
+
+// --- Course Editor (Edit Existing) ---
+const EditCourse = () => {
+  const { userId, db, navigation, setNavigation } = useAppContext();
+  const [course, setCourse] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const [showConfirmDelete, setShowConfirmDelete] = useState(false);
+
+  useEffect(() => {
+    if (!userId || !db || !navigation.id) {
+      setError("Invalid request.");
+      setLoading(false);
+      return;
+    }
+
+    const docPath = `/artifacts/${appId}/users/${userId}/courses/${navigation.id}`;
+    getDoc(doc(db, docPath))
+      .then(docSnap => {
+        if (docSnap.exists()) {
+          setCourse({ id: docSnap.id, ...docSnap.data() });
+        } else {
+          setError("Course not found.");
+        }
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error("Error fetching course:", err);
+        setError("Failed to load course data.");
+        setLoading(false);
+      });
+  }, [userId, db, navigation.id, appId]);
+
+  const handleSave = async (updatedCourseData) => {
+    if (!userId || !db) return;
+    
+    setSaving(true);
+    setError(null);
+    
+    try {
+      const docPath = `/artifacts/${appId}/users/${userId}/courses/${course.id}`;
+      const courseRef = doc(db, docPath);
+      
+      // Remove 'id' from data before saving
+      const { id, ...dataToSave } = updatedCourseData;
+      dataToSave.updatedAt = serverTimestamp();
+      
+      await updateDoc(courseRef, dataToSave);
+      setSaving(false);
+      // Navigate back to course detail view after save
+      setNavigation({ view: 'courseDetail', id: course.id });
+    } catch (err) {
+      console.error("Error saving course:", err);
+      setError("Failed to save course. Please try again.");
+      setSaving(false);
+    }
+  };
+  
+  const handleDelete = async () => {
+    if (!userId || !db || !course) return;
+    
+    setSaving(true);
+    setError(null);
+    setShowConfirmDelete(false);
+    
+    try {
+      const docPath = `/artifacts/${appId}/users/${userId}/courses/${course.id}`;
+      await deleteDoc(doc(db, docPath));
+      setSaving(false);
+      // Navigate back to courses list after delete
+      setNavigation({ view: 'courses', id: null });
+    } catch (err) {
+      console.error("Error deleting course:", err);
+      setError("Failed to delete course. Please try again.");
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-full">
+        <LoadingSpinner />
+      </div>
+    );
+  }
+
+  if (error) {
+    return <ErrorDisplay message={error} />;
+  }
+
+  if (!course) {
+    return <ErrorDisplay message="Course data could not be loaded." />;
+  }
+
+  return (
+    <>
+      <CourseEditor
+        initialCourseData={course}
+        onSave={handleSave}
+        onCancel={() => setNavigation({ view: 'courseDetail', id: course.id })}
+        onDelete={() => setShowConfirmDelete(true)}
+        isSaving={saving}
+        isEditing={true}
+        errorMessage={error}
+      />
+      
+      <Modal 
+        isOpen={showConfirmDelete}
+        onClose={() => setShowConfirmDelete(false)}
+        title="Delete Course"
+      >
+        <p className="text-gray-600 dark:text-gray-300">
+          Are you sure you want to delete the course "<strong>{course.title}</strong>"? This action cannot be undone.
+        </p>
+        <div className="flex justify-end space-x-4 mt-6">
+          <Button variant="secondary" onClick={() => setShowConfirmDelete(false)}>
+            Cancel
+          </Button>
+          <Button variant="danger" onClick={handleDelete} disabled={saving}>
+            {saving ? 'Deleting...' : 'Delete'}
+          </Button>
+        </div>
+      </Modal>
+    </>
+  );
+};
+
+
+// --- Course Creator (New Course) ---
+const CreateCourse = () => {
+  const { userId, db, setNavigation } = useAppContext();
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  const handleSave = async (newCourseData) => {
+    if (!userId || !db) return;
+    
+    setSaving(true);
+    setError(null);
+    
+    try {
+      const collectionPath = getPrivateCollectionPath(userId, 'courses');
+      if (!collectionPath) throw new Error("User not authenticated.");
+
+      const dataToSave = {
+        ...newCourseData,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+      
+      const docRef = await addDoc(collection(db, collectionPath), dataToSave);
+      setSaving(false);
+      // Navigate to the new course's detail page
+      setNavigation({ view: 'courseDetail', id: docRef.id });
+    } catch (err) {
+      console.error("Error creating course:", err);
+      setError("Failed to create course. Please try again.");
+      setSaving(false);
+    }
+  };
+
+  return (
+    <CourseEditor
+      onSave={handleSave}
+      onCancel={() => setNavigation({ view: 'courses', id: null })}
+      isSaving={saving}
+      isEditing={false}
+      errorMessage={error}
+    />
+  );
+};
+
+
+// --- AI Course Generation Flow ---
+const AICourseWizard = ({ onCourseGenerated, onCancel }) => {
+  const [step, setStep] = useState(1);
+  const [prompt, setPrompt] = useState("");
+  const [outline, setOutline] = useState(null);
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Schema for course outline generation
+  const courseOutlineSchema = {
+    type: "OBJECT",
+    properties: {
+      title: { type: "STRING" },
+      description: { type: "STRING" },
+      instructor: { type: "STRING" },
+      modules: {
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            title: { type: "STRING" },
+            lessons: {
+              type: "ARRAY",
+              items: {
+                type: "OBJECT",
+                properties: {
+                  title: { type: "STRING" },
+                  type: { type: "STRING", enum: ["text", "video", "quiz"] },
+                },
+                required: ["title", "type"]
+              }
+            }
+          },
+          required: ["title", "lessons"]
+        }
+      }
+    },
+    required: ["title", "description", "modules"]
+  };
+
+  // Schema for lesson content generation
+  const lessonContentSchema = {
+    type: "OBJECT",
+    properties: {
+      content: { type: "STRING" }, // HTML content for text, or description for video
+      videoSearchQuery: { type: "STRING" }, // For video lessons
+      questions: { // For quiz lessons
+        type: "ARRAY",
+        items: {
+          type: "OBJECT",
+          properties: {
+            question: { type: "STRING" },
+            type: { type: "STRING", enum: ["multiple-choice", "checkbox", "short-answer"] },
+            options: { type: "ARRAY", items: { type: "STRING" } },
+            correctAnswer: { type: "STRING" } // Can be index or text
+          },
+          required: ["question", "type", "options"]
+        }
+      }
+    }
+  };
+  
+  const systemInstructions = {
+    outline: "You are an expert instructional designer. Create a comprehensive, well-structured course outline based on the user's prompt. The outline must be detailed, logical, and broken down into modules and lessons. Each lesson must have a title and a type (text, video, or quiz). Ensure the response strictly follows the provided JSON schema.",
+    lesson: "You are a subject matter expert and content creator. Based on the course title, module title, and lesson title provided, generate the content for this specific lesson. Follow the JSON schema. For 'text' lessons, provide detailed content as an HTML string (use p, ul, ol, li, h3, h4, strong, em). For 'video' lessons, provide a 'videoSearchQuery' string for finding a relevant YouTube video and a brief 'content' description. For 'quiz' lessons, create an array of 2-3 relevant 'questions' with options and answers.",
+  };
+
+  const handleGenerateOutline = async () => {
+    if (!prompt) {
+      setError("Please enter a topic for your course.");
+      return;
+    }
+    setGenerating(true);
+    setError(null);
+    
+    try {
+      const fullPrompt = `Generate a course outline for: "${prompt}"`;
+      const generatedOutline = await generateJsonWithGemini(fullPrompt, courseOutlineSchema, systemInstructions.outline);
+      
+      // Add placeholder instructor if not provided
+      if (!generatedOutline.instructor) {
+        generatedOutline.instructor = "AI Instructor";
+      }
+      
+      setOutline(generatedOutline);
+      setStep(2);
+    } catch (err) {
+      console.error(err);
+      setError(err.message || "Failed to generate course outline.");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleCreateCourse = async () => {
+    setGenerating(true);
+    setError(null);
+    let fullCourseData = { ...outline };
+
+    try {
+      // Iterate through modules and lessons to generate content
+      const contentPromises = fullCourseData.modules.map(async (module, modIndex) => {
+        const lessonPromises = module.lessons.map(async (lesson, lesIndex) => {
+          const lessonPrompt = `Course: "${fullCourseData.title}"
+Module: "${module.title}"
+Lesson: "${lesson.title}"
+Lesson Type: "${lesson.type}"
+Generate the content for this lesson.`;
+          
+          try {
+            const lessonContent = await generateJsonWithGemini(lessonPrompt, lessonContentSchema, systemInstructions.lesson);
+            
+            // This is a bit complex, let's simplify by merging
+            // For video, we need to simulate a search. Let's just create a placeholder.
+            let videoUrl = null;
+            if (lesson.type === 'video') {
+              // In a real app, you'd use the videoSearchQuery with YouTube API.
+              // For now, we'll just set a placeholder.
+              videoUrl = 'dQw4w9WgXcQ'; // Placeholder video
+            }
+
+            return {
+              ...lesson,
+              content: lessonContent.content || "",
+              videoUrl: videoUrl, // Will be null unless it's a video
+              questions: lessonContent.questions || [],
+            };
+          } catch (lessonError) {
+            console.error(`Failed to generate content for L${modIndex}-${lesIndex}: ${lesson.title}`, lessonError);
+            // Return lesson without content on failure
+            return { ...lesson, content: "<p>Error generating content.</p>", questions: [] };
+          }
+        });
+        
+        const lessonsWithContent = await Promise.all(lessonPromises);
+        return { ...module, lessons: lessonsWithContent };
+      });
+
+      fullCourseData.modules = await Promise.all(contentPromises);
+      
+      // Pass the fully generated course data back to the editor
+      onCourseGenerated(fullCourseData);
+
+    } catch (err) {
+      console.error(err);
+      setError(err.message || "Failed to generate all course content.");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  return (
+    <div className="p-6">
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg mb-4" role="alert">
+          <p>{error}</p>
+        </div>
+      )}
+      
+      {generating && (
+        <div className="flex flex-col items-center justify-center p-10 bg-gray-50 dark:bg-gray-700 rounded-lg">
+          <LoadingSpinner />
+          <p className="mt-4 text-lg font-medium text-gray-700 dark:text-gray-200">
+            {step === 1 ? 'Generating course outline...' : 'Generating all lesson content...'}
+          </p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">This may take a moment.</p>
+        </div>
+      )}
+
+      {!generating && step === 1 && (
+        <div>
+          <h2 className="text-2xl font-semibold mb-4">Generate Course with AI</h2>
+          <p className="text-gray-600 dark:text-gray-300 mb-4">
+            Describe the topic you want to teach. The AI will generate a complete course outline for you.
+          </p>
+          <Textarea
+            label="Course Topic"
+            id="course-prompt"
+            placeholder="e.g., 'An introduction to Python programming for complete beginners' or 'A comprehensive guide to digital marketing'"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+          />
+          <div className="flex justify-end space-x-4 mt-6">
+            <Button variant="secondary" onClick={onCancel}>Cancel</Button>
+            <Button variant="primary" icon={Sparkles} onClick={handleGenerateOutline}>
+              Generate Outline
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {!generating && step === 2 && outline && (
+        <div>
+          <h2 className="text-2xl font-semibold mb-4">Generated Outline</h2>
+          <p className="text-gray-600 dark:text-gray-300 mb-4">
+            Review the generated outline. You can edit it later.
+          </p>
+          
+          <div className="max-h-96 overflow-y-auto p-4 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
+            <h3 className="text-xl font-bold">{outline.title}</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">{outline.description}</p>
+            <div className="space-y-4">
+              {outline.modules.map((module, index) => (
+                <div key={index}>
+                  <h4 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Module {index + 1}: {module.title}</h4>
+                  <ul className="list-disc list-inside pl-4 mt-2 space-y-1">
+                    {module.lessons.map((lesson, lIndex) => (
+                      <li key={lIndex} className="text-sm text-gray-600 dark:text-gray-300">
+                        {lesson.title} ({lesson.type})
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </div>
+          
+          <p className="text-gray-600 dark:text-gray-300 my-4">
+            Happy with this outline? The AI will now generate content for all {outline.modules.reduce((acc, m) => acc + m.lessons.length, 0)} lessons.
+          </p>
+          
+          <div className="flex justify-between items-center mt-6">
+            <Button variant="secondary" onClick={() => setStep(1)}>Back</Button>
+            <Button variant="primary" icon={Sparkles} onClick={handleCreateCourse}>
+              Generate All Content & Create Course
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+
+// --- Core Course Editor Component (Used by Create & Edit) ---
+const CourseEditor = ({ initialCourseData, onSave, onCancel, onDelete, isSaving, isEditing, errorMessage }) => {
+  const [course, setCourse] = useState(
+    initialCourseData || {
+      title: '',
+      description: '',
+      instructor: '',
+      imageUrl: '',
+      modules: [],
+    }
+  );
+  
+  const [showAiWizard, setShowAiWizard] = useState(false);
+  const [editingLesson, setEditingLesson] = useState(null); // { moduleIndex, lessonIndex, lesson }
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setCourse(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleAiCourseGenerated = (generatedCourse) => {
+    setCourse(generatedCourse);
+    setShowAiWizard(false);
+  };
+  
+  // --- Module Functions ---
+  const addModule = () => {
+    setCourse(prev => ({
+      ...prev,
+      modules: [...prev.modules, { title: `New Module ${prev.modules.length + 1}`, lessons: [] }]
+    }));
+  };
+  
+  const updateModuleTitle = (moduleIndex, title) => {
+    setCourse(prev => {
+      const newModules = [...prev.modules];
+      newModules[moduleIndex].title = title;
+      return { ...prev, modules: newModules };
+    });
+  };
+
+  const deleteModule = (moduleIndex) => {
+    setCourse(prev => ({
+      ...prev,
+      modules: prev.modules.filter((_, i) => i !== moduleIndex)
+    }));
+  };
+
+  // --- Lesson Functions ---
+  const addLesson = (moduleIndex) => {
+    const newLesson = { title: `New Lesson`, type: 'text', content: '' };
+    setCourse(prev => {
+      const newModules = [...prev.modules];
+      newModules[moduleIndex].lessons.push(newLesson);
+      return { ...prev, modules: newModules };
+    });
+    // Open the new lesson for editing
+    setEditingLesson({ moduleIndex, lessonIndex: course.modules[moduleIndex].lessons.length, lesson: newLesson });
+  };
+  
+  const deleteLesson = (moduleIndex, lessonIndex) => {
+    setCourse(prev => {
+      const newModules = [...prev.modules];
+      newModules[moduleIndex].lessons = newModules[moduleIndex].lessons.filter((_, i) => i !== lessonIndex);
+      return { ...prev, modules: newModules };
+    });
+  };
+  
+  const openLessonEditor = (moduleIndex, lessonIndex) => {
+    setEditingLesson({
+      moduleIndex,
+      lessonIndex,
+      lesson: { ...course.modules[moduleIndex].lessons[lessonIndex] } // Edit a copy
+    });
+  };
+
+  const closeLessonEditor = () => {
+    setEditingLesson(null);
+  };
+  
+  const saveLesson = (updatedLesson) => {
+    setCourse(prev => {
+      const newModules = [...prev.modules];
+      newModules[editingLesson.moduleIndex].lessons[editingLesson.lessonIndex] = updatedLesson;
+      return { ...prev, modules: newModules };
+    });
+    closeLessonEditor();
+  };
+  
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSave(course);
+  };
+
+  return (
+    <>
+      <form onSubmit={handleSubmit} className="space-y-8">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
+          <div>
+            <div className="flex items-center space-x-2">
+              <Button 
+                type="button"
+                onClick={onCancel}
+                variant="ghost"
+                className="!px-2"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </Button>
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+                {isEditing ? 'Edit Course' : 'Create New Course'}
+              </h1>
+            </div>
+            {!isEditing && (
+              <p className="mt-1 text-gray-500 dark:text-gray-400">
+                Fill in the details manually or use our AI assistant.
+              </p>
+            )}
+          </div>
+          {!isEditing && (
+             <Button 
+                type="button" 
+                onClick={() => setShowAiWizard(true)} 
+                variant="primary" 
+                icon={Sparkles}
+                className="mt-4 sm:mt-0"
+              >
+                Generate with AI
+              </Button>
+          )}
+        </div>
+        
+        {errorMessage && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg" role="alert">
+            <p>{errorMessage}</p>
+          </div>
+        )}
+
+        {/* Course Details */}
+        <div className="p-6 md:p-8 bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 space-y-6">
+          <h2 className="text-xl font-semibold">Course Details</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Input
+              label="Course Title"
+              id="title"
+              name="title"
+              value={course.title}
+              onChange={handleInputChange}
+              placeholder="e.g., Introduction to React"
+              required
+            />
+            <Input
+              label="Instructor Name"
+              id="instructor"
+              name="instructor"
+              value={course.instructor}
+              onChange={handleInputChange}
+              placeholder="e.g., Jane Doe"
+              required
+            />
+          </div>
+          <Textarea
+            label="Course Description"
+            id="description"
+            name="description"
+            value={course.description}
+            onChange={handleInputChange}
+            placeholder="A brief overview of what this course covers."
+          />
+          <Input
+            label="Cover Image URL"
+            id="imageUrl"
+            name="imageUrl"
+            value={course.imageUrl}
+            onChange={handleInputChange}
+            placeholder="https://example.com/image.png"
+          />
+        </div>
+
+        {/* Course Structure */}
+        <div className="p-6 md:p-8 bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 space-y-6">
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-semibold">Course Structure</h2>
+            <Button type="button" variant="secondary" icon={Plus} onClick={addModule}>
+              Add Module
+            </Button>
+          </div>
+
+          <div className="space-y-6">
+            {course.modules.map((module, moduleIndex) => (
+              <ModuleEditor
+                key={moduleIndex}
+                module={module}
+                moduleIndex={moduleIndex}
+                updateModuleTitle={updateModuleTitle}
+                deleteModule={deleteModule}
+                addLesson={addLesson}
+                deleteLesson={deleteLesson}
+                openLessonEditor={openLessonEditor}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Save/Delete Actions */}
+        <div className="flex flex-col sm:flex-row justify-between items-center pt-6 border-t border-gray-200 dark:border-gray-700">
+          <div>
+            {isEditing && (
+              <Button 
+                type="button" 
+                variant="danger" 
+                icon={Trash2} 
+                onClick={onDelete}
+                disabled={isSaving}
+              >
+                Delete Course
+              </Button>
+            )}
+          </div>
+          <div className="flex space-x-4 mt-4 sm:mt-0">
+            <Button type="button" variant="secondary" onClick={onCancel} disabled={isSaving}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" icon={Save} disabled={isSaving}>
+              {isSaving ? 'Saving...' : 'Save Course'}
+            </Button>
+          </div>
+        </div>
+      </form>
+
+      {/* AI Wizard Modal */}
+      <Modal 
+        isOpen={showAiWizard} 
+        onClose={() => setShowAiWizard(false)} 
+        title="AI Course Generator"
+      >
+        <AICourseWizard 
+          onCancel={() => setShowAiWizard(false)}
+          onCourseGenerated={handleAiCourseGenerated}
+        />
+      </Modal>
+
+      {/* Lesson Editor Modal */}
+      <Modal 
+        isOpen={!!editingLesson}
+        onClose={closeLessonEditor}
+        title={editingLesson ? `Edit Lesson: ${editingLesson.lesson.title}` : 'Edit Lesson'}
+      >
+        {editingLesson && (
+          <LessonEditor
+            lesson={editingLesson.lesson}
+            onSave={saveLesson}
+            onCancel={closeLessonEditor}
+          />
+        )}
+      </Modal>
+    </>
+  );
+};
+
+// --- Module Editor (Sub-component of CourseEditor) ---
+const ModuleEditor = ({ module, moduleIndex, updateModuleTitle, deleteModule, addLesson, deleteLesson, openLessonEditor }) => {
+  return (
+    <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
+      {/* Module Header */}
+      <div className="flex justify-between items-center mb-4">
+        <input
+          type="text"
+          value={module.title}
+          onChange={(e) => updateModuleTitle(moduleIndex, e.target.value)}
+          placeholder="Module Title"
+          className="text-lg font-semibold bg-transparent border-b border-gray-400 dark:border-gray-500 focus:outline-none focus:border-blue-600 dark:focus:border-blue-400 w-full mr-4 text-gray-900 dark:text-white"
+        />
+        <div className="flex-shrink-0">
+          <Button 
+            type="button" 
+            variant="ghost" 
+            className="!px-2 text-red-500 hover:text-red-700" 
+            onClick={() => deleteModule(moduleIndex)}
+            title="Delete Module"
+          >
+            <Trash2 className="w-4 h-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Lessons List */}
+      <div className="space-y-2 mb-4">
+        {module.lessons.map((lesson, lessonIndex) => (
+          <div 
+            key={lessonIndex} 
+            className="flex items-center justify-between p-3 bg-white dark:bg-gray-800 rounded-md shadow-sm border border-gray-200 dark:border-gray-700"
+          >
+            <div className="flex items-center">
+              {getLessonIcon(lesson.type, "w-4 h-4 mr-2 text-gray-500 dark:text-gray-400")}
+              <span className="font-medium">{lesson.title}</span>
+              <span className="ml-2 text-xs text-gray-400 dark:text-gray-500">({lesson.type})</span>
+            </div>
+            <div className="space-x-2">
+              <Button 
+                type="button" 
+                variant="ghost" 
+                className="!px-2" 
+                onClick={() => openLessonEditor(moduleIndex, lessonIndex)}
+                title="Edit Lesson"
+              >
+                <Edit className="w-4 h-4" />
+              </Button>
+              <Button 
+                type="button" 
+                variant="ghost" 
+                className="!px-2 text-red-500 hover:text-red-700"
+                onClick={() => deleteLesson(moduleIndex, lessonIndex)}
+                title="Delete Lesson"
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Add Lesson Button */}
+      <Button 
+        type="button" 
+        variant="secondary" 
+        size="sm" 
+        icon={Plus} 
+        onClick={() => addLesson(moduleIndex)}
+      >
+        Add Lesson
+      </Button>
+    </div>
+  );
+};
+
+
+// --- Lesson Editor (Sub-component of CourseEditor, in a Modal) ---
+const LessonEditor = ({ lesson: initialLesson, onSave, onCancel }) => {
+  const [lesson, setLesson] = useState(initialLesson);
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState(null);
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setLesson(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleContentChange = (content) => {
+    setLesson(prev => ({ ...prev, content }));
+  };
+  
+  // --- Quiz Question Functions ---
+  const addQuestion = () => {
+    const newQuestion = { question: '', type: 'multiple-choice', options: [''], correctAnswer: '' };
+    setLesson(prev => ({ ...prev, questions: [...(prev.questions || []), newQuestion] }));
+  };
+  
+  const updateQuestion = (qIndex, field, value) => {
+    setLesson(prev => {
+      const newQuestions = [...prev.questions];
+      newQuestions[qIndex][field] = value;
+      return { ...prev, questions: newQuestions };
+    });
+  };
+  
+  const deleteQuestion = (qIndex) => {
+    setLesson(prev => ({
+      ...prev,
+      questions: prev.questions.filter((_, i) => i !== qIndex)
+    }));
+  };
+  
+  const addOption = (qIndex) => {
+    setLesson(prev => {
+      const newQuestions = [...prev.questions];
+      newQuestions[qIndex].options.push('');
+      return { ...prev, questions: newQuestions };
+    });
+  };
+
+  const updateOption = (qIndex, oIndex, value) => {
+    setLesson(prev => {
+      const newQuestions = [...prev.questions];
+      newQuestions[qIndex].options[oIndex] = value;
+      return { ...prev, questions: newQuestions };
+    });
+  };
+  
+  const deleteOption = (qIndex, oIndex) => {
+    setLesson(prev => {
+      const newQuestions = [...prev.questions];
+      newQuestions[qIndex].options = newQuestions[qIndex].options.filter((_, i) => i !== oIndex);
+      return { ...prev, questions: newQuestions };
+    });
+  };
+
+  // --- AI Content Generation ---
+  const handleAiGenerate = async () => {
+    setGenerating(true);
+    setError(null);
+
+    const schema = {
+      type: "OBJECT",
+      properties: {
+        content: { type: "STRING" }, // HTML content for text, or description for video
+        videoSearchQuery: { type: "STRING" }, // For video lessons
+        questions: { // For quiz lessons
+          type: "ARRAY",
+          items: {
+            type: "OBJECT",
+            properties: {
+              question: { type: "STRING" },
+              type: { type: "STRING", enum: ["multiple-choice", "checkbox"] },
+              options: { type: "ARRAY", items: { type: "STRING" } },
+              correctAnswer: { type: "STRING" }
+            },
+            required: ["question", "type", "options"]
+          }
+        }
+      }
+    };
+    
+    const prompt = `Generate content for a lesson titled "${lesson.title}" of type "${lesson.type}".`;
+    const systemInstruction = `You are a subject matter expert. Generate content for this lesson. 
+- For 'text' lessons, provide detailed content as an HTML string (use p, ul, ol, li, h3, h4, strong, em).
+- For 'video' lessons, provide a brief 'content' description and a 'videoSearchQuery'.
+- For 'quiz' lessons, create an array of 2-3 relevant 'questions'.`;
+
+    try {
+      const result = await generateJsonWithGemini(prompt, schema, systemInstruction);
+      setLesson(prev => ({
+        ...prev,
+        content: result.content || prev.content || '',
+        videoUrl: (lesson.type === 'video' ? 'dQw4w9WgXcQ' : prev.videoUrl), // Use placeholder on generation
+        questions: result.questions || prev.questions || [],
+      }));
+    } catch (err) {
+      console.error(err);
+      setError(err.message || "Failed to generate content.");
+    } finally {
+      setGenerating(false);
+    }
+  };
+  
+  const renderContentEditor = () => {
+    switch (lesson.type) {
+      case 'text':
+        return (
+          <Textarea
+            label="Lesson Content (HTML)"
+            name="content"
+            value={lesson.content}
+            onChange={handleChange}
+            rows={10}
+            placeholder="Write lesson content here... (HTML is supported)"
+          />
+        );
+      case 'video':
+        return (
+          <div className="space-y-4">
+            <Input
+              label="Video URL (YouTube)"
+              name="videoUrl"
+              value={lesson.videoUrl}
+              onChange={handleChange}
+              placeholder="e.g., dQw4w9WgXcQ (YouTube Video ID)"
+            />
+            <Textarea
+              label="Video Description"
+              name="content"
+              value={lesson.content}
+              onChange={handleChange}
+              rows={4}
+              placeholder="A brief description of the video content."
+            />
+          </div>
+        );
+      case 'quiz':
+        return (
+          <div className="space-y-4">
+            <Textarea
+              label="Quiz Introduction"
+              name="content"
+              value={lesson.content}
+              onChange={handleChange}
+              rows={3}
+              placeholder="A brief introduction for the quiz."
+            />
+            <h4 className="font-semibold">Questions</h4>
+            {lesson.questions && lesson.questions.map((q, qIndex) => (
+              <QuizQuestionEditor
+                key={qIndex}
+                q={q}
+                qIndex={qIndex}
+                updateQuestion={updateQuestion}
+                deleteQuestion={deleteQuestion}
+                addOption={addOption}
+                updateOption={updateOption}
+                deleteOption={deleteOption}
+              />
+            ))}
+            <Button type="button" variant="secondary" icon={Plus} onClick={addQuestion}>
+              Add Question
+            </Button>
+          </div>
+        );
+      default:
+        return <p>Invalid lesson type.</p>;
+    }
+  };
+
+  return (
+    <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg" role="alert">
+          <p>{error}</p>
+        </div>
+      )}
+      
+      <Input
+        label="Lesson Title"
+        name="title"
+        value={lesson.title}
+        onChange={handleChange}
+        required
+      />
+      
+      <div>
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+          Lesson Type
+        </label>
+        <select
+          name="type"
+          value={lesson.type}
+          onChange={handleChange}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+        >
+          <option value="text">Text Lesson</option>
+          <option value="video">Video Lesson</option>
+          <option value="quiz">Quiz</option>
+        </select>
+      </div>
+
+      <div className="relative pt-4">
+        <div className="flex justify-between items-center mb-2">
+          <h3 className="text-lg font-semibold">Lesson Content</h3>
+          <Button 
+            type="button" 
+            variant="ghost" 
+            icon={Sparkles} 
+            onClick={handleAiGenerate}
+            disabled={generating}
+          >
+            {generating ? 'Generating...' : 'Generate with AI'}
+          </Button>
+        </div>
+        {generating && (
+          <div className="absolute inset-0 bg-white/70 dark:bg-gray-800/70 flex items-center justify-center z-10 rounded-lg">
+            <LoadingSpinner />
+          </div>
+        )}
+        <div className="p-4 border border-gray-200 dark:border-gray-600 rounded-lg">
+          {renderContentEditor()}
+        </div>
+      </div>
+      
+      <div className="flex justify-end space-x-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+        <Button type="button" variant="secondary" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button type="button" variant="primary" onClick={() => onSave(lesson)}>
+          Save Lesson
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+// --- Quiz Question Editor (Sub-component of LessonEditor) ---
+const QuizQuestionEditor = ({ q, qIndex, updateQuestion, deleteQuestion, addOption, updateOption, deleteOption }) => {
+  return (
+    <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 space-y-3">
+      <div className="flex justify-between items-center">
+        <p className="font-medium">Question {qIndex + 1}</p>
+        <Button 
+          type="button" 
+          variant="ghost" 
+          className="!px-2 text-red-500 hover:text-red-700"
+          onClick={() => deleteQuestion(qIndex)}
+        >
+          <Trash2 className="w-4 h-4" />
+        </Button>
+      </div>
+      <Textarea
+        label="Question Text"
+        value={q.question}
+        onChange={(e) => updateQuestion(qIndex, 'question', e.target.value)}
+        rows={2}
+      />
+      <div className="space-y-2">
+        <label className="text-sm font-medium">Options</label>
+        {q.options.map((opt, oIndex) => (
+          <div key={oIndex} className="flex items-center space-x-2">
+            <input
+              type={q.type === 'multiple-choice' ? 'radio' : 'checkbox'}
+              name={`correct-q-${qIndex}`}
+              className="mt-1"
+            />
+            <input
+              type="text"
+              value={opt}
+              onChange={(e) => updateOption(qIndex, oIndex, e.target.value)}
+              className="w-full px-2 py-1 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 dark:bg-gray-600 dark:border-gray-500"
+              placeholder={`Option ${oIndex + 1}`}
+            />
+            <Button 
+              type="button" 
+              variant="ghost" 
+              className="!px-2 text-red-500"
+              onClick={() => deleteOption(qIndex, oIndex)}
+            >
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
+        ))}
+        <Button type="button" variant="ghost" size="sm" icon={Plus} onClick={() => addOption(qIndex)}>
+          Add Option
+        </Button>
+      </div>
+      {/* TODO: Add logic for setting correct answer */}
+    </div>
+  );
+};
+
+
+// --- Other Pages (Placeholder) ---
+
+const Analytics = () => {
+  const { darkMode } = useAppContext();
+  return (
+  <div>
+    <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Analytics</h1>
+    <p className="mt-2 text-gray-600 dark:text-gray-400">
+      Detailed analytics and reports will be available here.
+    </p>
+    {/* Mockup Chart */}
+    <div className="mt-8 bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700">
+      <h3 className="text-lg font-semibold mb-4">Student Engagement</h3>
+      <ResponsiveContainer width="100%" height={400}>
+        <BarChart data={[
+          { name: 'Jan', engaged: 200, dropped: 30 },
+          { name: 'Feb', engaged: 250, dropped: 20 },
+          { name: 'Mar', engaged: 300, dropped: 45 },
+          { name: 'Apr', engaged: 320, dropped: 15 },
+          { name: 'May', engaged: 400, dropped: 50 },
+        ]}>
+          <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.2} />
+          <XAxis dataKey="name" />
+          <YAxis />
+          <Tooltip 
+            contentStyle={{ 
+              backgroundColor: darkMode ? '#374151' : '#ffffff', 
+              borderColor: darkMode ? '#4b5563' : '#e5e7eb' 
+            }} 
+          />
+          <Legend />
+          <Bar dataKey="engaged" stackId="a" fill="#3b82f6" />
+          <Bar dataKey="dropped" stackId="a" fill="#ef4444" />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  </div>
+  );
+};
+
+const Students = () => (
+  <div>
+    <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Students</h1>
+    <p className="mt-2 text-gray-600 dark:text-gray-400">
+      Student management and user data will be displayed here.
+    </p>
+    <div className="mt-8 bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700">
+      <h3 className="text-lg font-semibold mb-4">Student List</h3>
+      <table className="w-full text-left">
+        <thead>
+          <tr className="border-b dark:border-gray-700">
+            <th className="py-2">Name</th>
+            <th className="py-2">Email</th>
+            <th className="py-2">Courses Enrolled</th>
+            <th className="py-2">Joined</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+            <td className="py-3">John Doe</td>
+            <td className="py-3">john.doe@example.com</td>
+            <td className="py-3">3</td>
+            <td className="py-3">2023-01-15</td>
+          </tr>
+          <tr className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+            <td className="py-3">Jane Smith</td>
+            <td className="py-3">jane.smith@example.com</td>
+            <td className="py-3">5</td>
+            <td className="py-3">2023-02-10</td>
+          </tr>
+          <tr className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+            <td className="py-3">Mike Johnson</td>
+            <td className="py-3">mike.johnson@example.com</td>
+            <td className="py-3">1</td>
+            <td className="py-3">2023-03-01</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+);
+
+
+const SettingsPage = () => (
+  <div>
+    <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Settings</h1>
+    <p className="mt-2 text-gray-600 dark:text-gray-400">
+      Application settings and user profile options will be here.
+    </p>
+    <div className="mt-8 bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 max-w-lg space-y-6">
+       <div className="flex justify-between items-center">
+        <label className="text-lg font-medium">Dark Mode</label>
+        <button 
+          onClick={useAppContext().toggleDarkMode}
+          className="w-12 h-6 flex items-center bg-gray-300 dark:bg-blue-600 rounded-full p-1 transition-colors"
+        >
+          <div className="w-4 h-4 bg-white rounded-full shadow-md transform transition-transform dark:translate-x-6"></div>
+        </button>
+      </div>
+      
+      <div className="pt-6 border-t dark:border-gray-700">
+        <Input label="Admin Email" id="admin-email" type="email" defaultValue="admin@courseai.com" />
+      </div>
+
+      <div className="pt-6 border-t dark:border-gray-700">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          API Keys
+        </label>
+        <Input label="Gemini API Key" id="gemini-key" type="password" defaultValue="****************" />
+        <Input label="YouTube API Key" id="youtube-key" type="password" defaultValue="****************" className="mt-4" />
+      </div>
+
+       <div className="flex justify-end pt-6 border-t dark:border-gray-700">
+         <Button variant="primary" icon={Save}>Save Settings</Button>
+       </div>
+    </div>
+  </div>
+);
+
+
+// --- Main App Component ---
+function App() {
+  const { loading, error, isAuthReady, navigation } = useAppContext();
+  
+  if (loading || !isAuthReady) {
+    return <FullPageLoader message={isAuthReady ? "Loading data..." : "Authenticating..."} />;
+  }
+  
+  if (error) {
+    return <ErrorDisplay message={error} />;
+  }
+
+  const renderView = () => {
+    switch (navigation.view) {
+      case 'dashboard':
+        return <Dashboard />;
+      case 'courses':
+        return <CoursesList />;
+      case 'courseDetail':
+        return <CourseDetail />;
+      case 'createCourse':
+        return <CreateCourse />;
+      case 'editCourse':
+        return <EditCourse />;
+      case 'analytics':
+        return <Analytics />;
+      case 'students':
+        return <Students />;
+      case 'settings':
+        return <SettingsPage />;
+      default:
+        return <Dashboard />;
+    }
+  };
+
+  return (
+    <AppLayout>
+      {renderView()}
+    </AppLayout>
+  );
+}
+
+// --- Root Component ---
+export default function Root() {
+  // Wrap the main App in the provider
+  return (
+    <AppProvider>
+      <App />
+    </AppProvider>
+  );
+}
+
